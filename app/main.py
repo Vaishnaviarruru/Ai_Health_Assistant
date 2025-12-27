@@ -1,5 +1,3 @@
-from fastapi import FastAPI, Depends
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import uuid
 
@@ -31,9 +29,6 @@ from app.general_engine import (
     protein_planning,
     what_if_simulation,
 )
-
-# ---------------- APP (CREATE FIRST) ----------------
-
 app = FastAPI(title="AI Health Backend")
 
 # ---------------- CORS (AFTER APP) ----------------
