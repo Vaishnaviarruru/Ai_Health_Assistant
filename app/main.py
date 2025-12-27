@@ -1,16 +1,5 @@
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # later restrict to Vercel URL
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-from fastapi.middleware.cors import CORSMiddleware
-
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import uuid
 
@@ -43,18 +32,23 @@ from app.general_engine import (
     what_if_simulation,
 )
 
-Base.metadata.create_all(bind=engine)
+# ---------------- APP (CREATE FIRST) ----------------
 
 app = FastAPI(title="AI Health Backend")
 
+# ---------------- CORS (AFTER APP) ----------------
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],  # later restrict to Vercel URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ---------------- DATABASE ----------------
+
+Base.metadata.create_all(bind=engine)
 
 def get_db():
     db = SessionLocal()
@@ -63,37 +57,65 @@ def get_db():
     finally:
         db.close()
 
+# ---------------- ROOT ----------------
+
 @app.get("/")
 def root():
     return {"status": "Backend running"}
 
-# ---------------- STUDENT ----------------
+# ---------------- STUDENT CREATE ----------------
 
 @app.post("/student/create", response_model=StudentResponse)
 def create_student(data: StudentCreate, db: Session = Depends(get_db)):
     student_id = str(uuid.uuid4())
-    student = Student(id=student_id, **data.dict())
+
+    student = Student(
+        id=student_id,
+        age=data.age,
+        height=data.height,
+        weight=data.weight,
+        budget=data.budget,
+        bmi=data.bmi,
+    )
+
     db.add(student)
     db.commit()
+
     return {"student_id": student_id}
 
+# ---------------- STUDENT LOG ----------------
 
 @app.post("/student/log")
-def log_health(data: HealthLogCreate, db: Session = Depends(get_db)):
-    db.add(HealthLog(**data.dict()))
+def add_health_log(data: HealthLogCreate, db: Session = Depends(get_db)):
+    log = HealthLog(
+        student_id=data.student_id,
+        date=data.date,
+        sleep_hours=data.sleep_hours,
+        junk_food=data.junk_food,
+        energy=data.energy,
+    )
+
+    db.add(log)
     db.commit()
-    return {"message": "Log saved"}
 
+    return {"message": "Health log saved"}
 
-def fetch_student_context(student_id, db):
-    student = db.query(Student).filter(Student.id == student_id).first()
+# ---------------- STUDENT ANALYZE ----------------
+
+@app.post("/student/analyze", response_model=AnalyzeResponse)
+def analyze_student(data: AnalyzeRequest, db: Session = Depends(get_db)):
+    student = db.query(Student).filter(Student.id == data.student_id).first()
+    if not student:
+        return {"analysis": "Student not found"}
+
     logs = (
         db.query(HealthLog)
-        .filter(HealthLog.student_id == student_id)
+        .filter(HealthLog.student_id == data.student_id)
         .order_by(HealthLog.date.desc())
-        .limit(7)
+        .limit(5)
         .all()
     )
+
     profile = {
         "age": student.age,
         "height": student.height,
@@ -101,67 +123,41 @@ def fetch_student_context(student_id, db):
         "budget": student.budget,
         "bmi": student.bmi,
     }
-    log_data = [log.__dict__ for log in logs]
-    return student, profile, log_data
 
+    log_data = [
+        {
+            "date": log.date,
+            "sleep_hours": log.sleep_hours,
+            "junk_food": log.junk_food,
+            "energy": log.energy,
+        }
+        for log in logs
+    ]
 
-@app.post("/student/analyze", response_model=AnalyzeResponse)
-def student_analysis(data: AnalyzeRequest, db: Session = Depends(get_db)):
-    _, profile, logs = fetch_student_context(data.student_id, db)
-    return {"analysis": analyze_student_health(profile, logs)}
+    return {"analysis": analyze_student_health(profile, log_data)}
 
-
-@app.post("/student/sleep-analysis")
-def sleep(data: AnalyzeRequest, db: Session = Depends(get_db)):
-    _, profile, logs = fetch_student_context(data.student_id, db)
-    return {"analysis": analyze_sleep_patterns(profile, logs)}
-
-
-@app.post("/student/nutrient-risk")
-def nutrients(data: AnalyzeRequest, db: Session = Depends(get_db)):
-    _, profile, logs = fetch_student_context(data.student_id, db)
-    return {"analysis": analyze_nutrient_deficiency(profile, logs)}
-
-
-@app.post("/student/advice")
-def advice(data: AnalyzeRequest, db: Session = Depends(get_db)):
-    _, profile, logs = fetch_student_context(data.student_id, db)
-    return {"analysis": generate_personalized_student_advice(profile, logs)}
-
-
-@app.post("/student/mess-food")
-def mess_food(data: AnalyzeRequest, db: Session = Depends(get_db)):
-    _, profile, logs = fetch_student_context(data.student_id, db)
-    return {"analysis": analyze_mess_food(profile, logs)}
-
-
-@app.post("/student/budget-meal")
-def budget_meal(data: AnalyzeRequest, db: Session = Depends(get_db)):
-    _, profile, logs = fetch_student_context(data.student_id, db)
-    return {"analysis": generate_budget_meal_plan(profile, logs)}
-
-# ---------------- GENERAL ----------------
+# ---------------- GENERAL MODE ----------------
 
 @app.post("/general/diet")
-def diet(data: GeneralProfile):
+def general_diet(data: GeneralProfile):
     return {"diet_plan": generate_diet(data.dict())}
 
 @app.post("/general/workout")
-def workout(data: GeneralProfile):
+def general_workout(data: GeneralProfile):
     return {"workout_plan": generate_workout(data.dict())}
 
 @app.post("/general/summary")
-def summary(data: GeneralProfile):
+def general_summary(data: GeneralProfile):
     return {"summary": generate_health_summary(data.dict())}
 
 @app.post("/general/mental")
-def mental(data: GeneralProfile):
+def general_mental(data: GeneralProfile):
     return {"mental_support": mental_wellness_support(data.dict())}
 
 @app.post("/general/protein")
-def protein(data: GeneralProfile):
+def general_protein(data: GeneralProfile):
     return {"protein_plan": protein_planning(data.dict())}
 
 @app.post("/general/what-if")
-def what_if(data: GeneralProfile):
+def general_what_if(data: GeneralProfile):
     return {"simulation": what_if_simulation(data.dict())}
