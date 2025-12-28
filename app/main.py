@@ -1,3 +1,5 @@
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import uuid
 
@@ -29,13 +31,16 @@ from app.general_engine import (
     protein_planning,
     what_if_simulation,
 )
+
+# ---------------- APP ----------------
+
 app = FastAPI(title="AI Health Backend")
 
-# ---------------- CORS (AFTER APP) ----------------
+# ---------------- CORS ----------------
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # later restrict to Vercel URL
+    allow_origins=["*"],   # later restrict to frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
